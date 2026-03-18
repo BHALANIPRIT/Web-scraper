@@ -12,7 +12,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 # --- 2. CORE IMPORTS ---
-from scraping_pipeline import execute_scraping
+from scraper.scraping_pipeline import execute_scraping
 try:
     from llm.gemini_service import LLMProcessor
     # Ensure your GeminiService uses 'gemini-3-flash-preview' or 'gemini-2.5-flash'

@@ -1,7 +1,15 @@
+import sys
+import os
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+if project_root not in sys.path:
+     sys.path.insert(0, project_root)
+
 import traceback
 import streamlit as st
 from urllib.parse import urlparse
-from scraping_pipeline import execute_scraping
+from scraper.scraping_pipeline import execute_scraping
 
 st.set_page_config(page_title="Core Scraping Module Demo using Playwright")
 
