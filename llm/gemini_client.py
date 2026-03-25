@@ -1,28 +1,27 @@
 import os
 from dotenv import load_dotenv
-from google import genai
+from groq import Groq
 
 # Load env
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
+api_key = os.getenv("GROQ_API_KEY")
+
 
 if not api_key:
-    print("CRITICAL ERROR: GEMINI_API_KEY not found.")
+    print("CRITICAL ERROR: GROQ_API_KEY not found.")
     client = None
 else:
-    client = genai.Client(api_key=api_key)
+    client = Groq(api_key=api_key)
 
-
-DEFAULT_MODEL = "gemini-2.5-flash"
-
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 def call_llm_api(prompt, model=DEFAULT_MODEL, temperature=0.2):
     """
-    Generic LLM caller for all modules.
+    Generic LLM caller for all modules via Groq.
 
     Args:
         prompt (str or dict): Input prompt
-        model (str): Gemini model
+        model (str): Groq model ID
         temperature (float): Controls randomness
 
     Returns:
@@ -30,39 +29,27 @@ def call_llm_api(prompt, model=DEFAULT_MODEL, temperature=0.2):
     """
 
     if not client:
-        raise RuntimeError("GenAI client not configured.")
+        raise RuntimeError("Groq client not configured.")
+
+    # Normalize prompt to Groq message format
+    if isinstance(prompt, str):
+        messages = [{"role": "user", "content": prompt}]
+    elif isinstance(prompt, list):
+        messages = prompt  # Already in message format
+    elif isinstance(prompt, dict):
+        messages = [{"role": "user", "content": str(prompt)}]
+    else:
+        messages = [{"role": "user", "content": str(prompt)}]
 
     try:
-        response = client.models.generate_content(
+        response = client.chat.completions.create(
             model=model,
-            contents=prompt,
-            config={
-                "temperature": temperature
-            }
+            messages=messages,
+            temperature=temperature,
+            max_tokens=4096,
         )
 
-        # --- Robust response parsing ---
-        if hasattr(response, "text") and response.text:
-            return response.text
-
-        elif getattr(response, "candidates", None):
-            try:
-                candidate = response.candidates[0]
-                content = getattr(candidate, "content", None)
-
-                if content and getattr(content, "parts", None):
-                    parts = content.parts
-                    return "".join([
-                        p.text if hasattr(p, "text") else str(p)
-                        for p in parts
-                    ])
-
-                return str(candidate)
-
-            except Exception:
-                return str(response)
-
-        return str(response)
+        return response.choices[0].message.content
 
     except Exception as e:
-        raise RuntimeError(f"Gemini API Error: {e}")
+        raise RuntimeError(f"Groq API Error: {e}")
