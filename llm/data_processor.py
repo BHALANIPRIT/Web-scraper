@@ -8,14 +8,15 @@ User Query:
 {query}
 
 Extracted Data:
-{json.dumps(extracted_data)[:15000]}
+{json.dumps(extracted_data)[:15000]}  # Truncate if too long
 
 Task:
 - Clean and structure the data
 - Remove duplicates
 - Format into clear structured JSON
 
-STRICT: Return ONLY JSON.
+STRICT: Return JSON.
+        Give formatted explaination of Data.
 """
 
     response_text = call_llm_api(prompt)
