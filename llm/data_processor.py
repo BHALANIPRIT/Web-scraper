@@ -1,26 +1,25 @@
 import json
 from llm.llm_client import call_llm_api
 
-
 def process_extracted_data(query, extracted_data):
     prompt = f"""
 User Query:
 {query}
 
-Extracted Data:
-{json.dumps(extracted_data)[:15000]}
+Extracted HTML Elements:
+{json.dumps(extracted_data)[:12000]}
 
 Task:
-- Clean and structure the data
-- Remove duplicates
-- Format into clear structured JSON
+1. Identify relevant data from extracted content
+2. Remove noise
+3. Structure the output clearly
+4. Maintain relationships (e.g., name-price pairs)
 
-STRICT: Return ONLY JSON.
+Return clean JSON or formatted answer.
+
+STRICT:
+- Do not hallucinate
+- Use only provided data
 """
 
-    response_text = call_llm_api(prompt)
-
-    try:
-        return json.loads(response_text)
-    except Exception:
-        return response_text
+    return call_llm_api(prompt)
