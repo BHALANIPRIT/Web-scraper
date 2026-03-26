@@ -11,6 +11,7 @@ st.set_page_config(
 )
 from utils.layout import setup_page
 from utils.icons import icon
+from services.data_analyser import analyse_dataframe, analyse_text_query
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,30 +41,42 @@ def df_summary(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 def call_claude(prompt: str, system: str = "") -> str:
-    """Call Anthropic API via fetch inside Streamlit — uses server-side requests."""
-    import urllib.request, json as _json
-    payload = {
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 1500,
-        "messages": [{"role": "user", "content": prompt}],
-    }
+    """Call Groq API for LLM responses."""
+    import urllib.request, json as _json, os
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return "[Error: GROQ_API_KEY not found in .env file]"
+
+    messages = []
     if system:
-        payload["system"] = system
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "max_tokens": 1500,
+        "messages": messages,
+    }
+
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        "https://api.groq.com/openai/v1/chat/completions",
         data=_json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01",
+            "Authorization": f"Bearer {api_key}",
         },
         method="POST",
     )
+
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = _json.loads(resp.read())
-            return data["content"][0]["text"]
+            return data["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"[API Error: {e}]"
+        return f"[Groq API Error: {e}]"
 
 # ── session state ─────────────────────────────────────────────────────────────
 for key, default in [
@@ -771,50 +784,14 @@ with main:
                         st.markdown('</div>', unsafe_allow_html=True)
 
                         if run_img_analysis:
-                            with st.spinner("Analysing image with Claude Vision…"):
-                                import urllib.request, json as _json
-                                mime_type = "image/png" if af["ext"] == "png" else "image/jpeg"
-                                payload = {
-                                    "model": "claude-sonnet-4-20250514",
-                                    "max_tokens": 1200,
-                                    "messages": [{
-                                        "role": "user",
-                                        "content": [
-                                            {
-                                                "type": "image",
-                                                "source": {
-                                                    "type": "base64",
-                                                    "media_type": mime_type,
-                                                    "data": af["b64"],
-                                                },
-                                            },
-                                            {
-                                                "type": "text",
-                                                "text": (
-                                                    "Please provide a thorough analysis of this image. "
-                                                    "Include: 1) Overall description, 2) Key objects/elements, "
-                                                    "3) Any text visible, 4) Colors and composition, "
-                                                    "5) Context and likely purpose, 6) Notable insights or observations."
-                                                ),
-                                            },
-                                        ],
-                                    }],
-                                }
-                                req = urllib.request.Request(
-                                    "https://api.anthropic.com/v1/messages",
-                                    data=_json.dumps(payload).encode(),
-                                    headers={
-                                        "Content-Type": "application/json",
-                                        "anthropic-version": "2023-06-01",
-                                    },
-                                    method="POST",
+                            with st.spinner("Analysing image with AI…"):
+                                result = call_claude(
+                                    "Analyse this image and provide: 1) Overall description, "
+                                    "2) Key objects/elements, 3) Any visible text, "
+                                    "4) Colors and composition, 5) Context and purpose, "
+                                    "6) Notable insights.",
+                                    "You are an expert image analyst. Describe clearly and thoroughly."
                                 )
-                                try:
-                                    with urllib.request.urlopen(req, timeout=30) as resp:
-                                        data = _json.loads(resp.read())
-                                        result = data["content"][0]["text"]
-                                except Exception as e:
-                                    result = f"[Vision API Error: {e}]"
                             st.session_state.ds_analysis[fname] = result
                             st.rerun()
 
