@@ -65,10 +65,10 @@ def _llm_response(user_msg: str, history: list) -> str:
     except Exception as e:
         err = str(e)
         if "GROQ_API_KEY" in err or "not configured" in err.lower():
-            return ("⚠️ **Groq API key not found.**\n\n"
+            return ("**Groq API key not found.**\n\n"
                     "Add it to `.env`:\n```\nGROQ_API_KEY=gsk_...\n```\n"
                     "Get a free key at [console.groq.com](https://console.groq.com).")
-        return f"⚠️ LLM error: {err}"
+        return f"LLM error: {err}"
 
 
 # ── Session helpers ───────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ with main:
                         with st.chat_message("user"):
                             st.markdown(msg["content"])
                     else:
-                        with st.chat_message("assistant", avatar="🤖"):
+                        with st.chat_message("assistant", avatar="Bot"):
                             st.markdown(msg["content"])
 
         # ── Input bar (always at bottom of right column) ──────────────────────
