@@ -468,10 +468,10 @@ with main:
             if af["type"] == "table" and af["df"] is not None:
                 df = af["df"]
                 tab1, tab2, tab3, tab4 = st.tabs([
-                    "📋  Preview",
-                    "📊  Charts",
-                    "🤖  AI Analysis",
-                    "💬  Ask AI",
+                    "Preview",
+                    "Charts",
+                    "AI Analysis",
+                    "Ask AI",
                 ])
 
                 # ── TAB 1: Preview ───────────────────────────────
@@ -589,11 +589,11 @@ with main:
 <div class="analysis-box">{analysis_text}</div>
 """, unsafe_allow_html=True)
                         st.download_button(
-                            "⬇  Download Analysis (.txt)", analysis_text,
+                            "Download Analysis (.txt)", analysis_text,
                             f"{fname}_analysis.txt", "text/plain",
                             use_container_width=True, key="dl_analysis",
                         )
-                        if st.button("🔄  Re-analyse", use_container_width=True, key="reanalyse"):
+                        if st.button("Re-analyse", use_container_width=True, key="reanalyse"):
                             del st.session_state.ds_analysis[fname]
                             st.rerun()
                     else:
@@ -615,7 +615,7 @@ with main:
 """, unsafe_allow_html=True)
                         st.markdown('<div class="PB">', unsafe_allow_html=True)
                         run_analysis = st.button(
-                            f"🤖  Run AI Analysis on {fname}",
+                            f"Run AI Analysis on {fname}",
                             use_container_width=True, key="run_analysis",
                         )
                         st.markdown('</div>', unsafe_allow_html=True)
@@ -725,7 +725,7 @@ with main:
 
             elif af["type"] == "image":
                 # ── IMAGE VIEWER + AI Vision Analysis ───────────
-                tab_img1, tab_img2 = st.tabs(["🖼  Image Viewer", "🤖  AI Vision Analysis"])
+                tab_img1, tab_img2 = st.tabs(["Image Viewer", "AI Vision Analysis"])
 
                 with tab_img1:
                     st.markdown(f"""
@@ -741,7 +741,7 @@ with main:
                     # Download
                     mime = "image/png" if af["ext"] == "png" else "image/jpeg"
                     st.download_button(
-                        f"⬇  Download {af['name']}",
+                        f"Download {af['name']}",
                         af["bytes"], af["name"], mime,
                         use_container_width=True, key="dl_img",
                     )
@@ -757,11 +757,11 @@ with main:
 <div class="analysis-box">{analysis_text}</div>
 """, unsafe_allow_html=True)
                         st.download_button(
-                            "⬇  Download Analysis (.txt)", analysis_text,
+                            "Download Analysis (.txt)", analysis_text,
                             f"{fname}_analysis.txt", "text/plain",
                             use_container_width=True, key="dl_img_analysis",
                         )
-                        if st.button("🔄  Re-analyse", use_container_width=True, key="reanalyse_img"):
+                        if st.button("Re-analyse", use_container_width=True, key="reanalyse_img"):
                             del st.session_state.ds_analysis[fname]
                             st.rerun()
                     else:
@@ -778,7 +778,7 @@ with main:
 """, unsafe_allow_html=True)
                         st.markdown('<div class="PB">', unsafe_allow_html=True)
                         run_img_analysis = st.button(
-                            f"🤖  Analyse Image with AI",
+                            f"Analyse Image with AI",
                             use_container_width=True, key="run_img_analysis",
                         )
                         st.markdown('</div>', unsafe_allow_html=True)
@@ -797,7 +797,7 @@ with main:
 
             elif af["type"] == "pdf":
                 # ── PDF Viewer ───────────────────────────────────
-                tab_pdf1, tab_pdf2 = st.tabs(["📄  PDF Viewer", "⬇  Download"])
+                tab_pdf1, tab_pdf2 = st.tabs(["PDF Viewer", "Download"])
 
                 with tab_pdf1:
                     st.markdown(f"""
