@@ -3,7 +3,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 st.set_page_config(
-    page_title="WebScraper Pro — Advanced Web Data Extraction",
+    page_title="Web Scrape Pro — Advanced Web Data Extraction",
     page_icon="🌐",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -14,13 +14,9 @@ from utils.icons import icon
 
 t = apply_theme()
 
-# ── Extra CSS for landing page ─────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-/* Hide sidebar completely on landing */
 [data-testid="stSidebar"] {{ display: none !important; }}
-
-/* Remove ALL default padding so layout fills edge to edge */
 .block-container {{
     padding-top: 0 !important;
     padding-left: 0 !important;
@@ -28,8 +24,6 @@ st.markdown(f"""
     padding-bottom: 0 !important;
     max-width: 100% !important;
 }}
-
-/* Hero CTA button */
 .cta-btn > button {{
     background: {t['accent']} !important;
     color: #fff !important;
@@ -46,8 +40,6 @@ st.markdown(f"""
     filter: brightness(1.12) !important;
     transform: translateY(-2px) !important;
 }}
-
-/* Feature cards */
 .feat-card {{
     background: {t['card']};
     border: 1px solid {t['border']};
@@ -73,8 +65,6 @@ st.markdown(f"""
 .feat-desc {{
     font-size: 0.82rem; color: {t['text2']}; line-height: 1.65;
 }}
-
-/* Step circle */
 .step-circle {{
     width: 58px; height: 58px; border-radius: 50%;
     border: 2px solid {t['accent']};
@@ -84,8 +74,6 @@ st.markdown(f"""
     font-size: 1.25rem; font-weight: 800; color: {t['accent']};
     box-shadow: 0 0 22px {t['accent_glow']};
 }}
-
-/* Stat numbers */
 .stat-num {{
     font-size: 2rem; font-weight: 800;
     letter-spacing: -0.04em; color: {t['accent']};
@@ -96,8 +84,6 @@ st.markdown(f"""
     text-transform: uppercase; letter-spacing: 0.08em;
     text-align: center; margin-top: 3px;
 }}
-
-/* Section labels */
 .sec-label {{
     font-size: 0.72rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.12em;
@@ -113,8 +99,6 @@ st.markdown(f"""
     text-align: center; line-height: 1.7;
     max-width: 560px; margin: 0 auto 2.5rem;
 }}
-
-/* Tech badge */
 .tech-badge {{
     display: inline-flex; align-items: center; gap: 6px;
     padding: 0.4rem 1rem;
@@ -123,8 +107,6 @@ st.markdown(f"""
     color: {t['text2']}; font-weight: 500;
     margin: 0.3rem;
 }}
-
-/* Nav link */
 .nav-link {{
     color: {t['text2']}; font-size: 0.88rem;
     font-weight: 500; text-decoration: none;
@@ -134,32 +116,20 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  NAVBAR
-# ══════════════════════════════════════════════════════════
+# NAVBAR
 nav_l, nav_m, nav_r = st.columns([3, 4, 3])
 
 with nav_l:
     st.markdown(f"""
-    <div style="display:flex;align-items:center;gap:10px;padding:1rem 0 0.5rem 1rem;
-         font-weight:700;font-size:1.05rem;color:{t['text']};">
-      <div style="width:36px;height:36px;
+    <div style="display:flex;align-items:center;gap:10px;padding:1rem 0 0.5rem 1.5rem;
+         font-weight:800;font-size:1.2rem;color:{t['text']};">
+      <div style="width:38px;height:38px;
            background:linear-gradient(135deg,{t['accent']},{t['accent_h']});
            border-radius:10px;display:flex;align-items:center;justify-content:center;
            box-shadow:0 0 16px {t['accent_glow']};">
-        {icon('globe',18,'#fff')}
+        {icon('globe',20,'#fff')}
       </div>
-      WebScraper Pro
-    </div>
-    """, unsafe_allow_html=True)
-
-with nav_m:
-    st.markdown(f"""
-    <div style="display:flex;align-items:center;justify-content:center;
-         gap:2.5rem;padding:1.1rem 0 0.5rem;">
-      <a class="nav-link" href="#features">Features</a>
-      <a class="nav-link" href="#how">How It Works</a>
-      <a class="nav-link" href="#tech">Tech Stack</a>
+      Web Scrape Pro
     </div>
     """, unsafe_allow_html=True)
 
@@ -175,41 +145,33 @@ with nav_r:
 
 st.markdown(f'<hr style="margin:0;border-color:{t["border"]};">', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  HERO
-# ══════════════════════════════════════════════════════════
+# HERO
 st.markdown(f"""
-<div style="text-align:center;padding:5rem 2rem 3rem;
+<div style="text-align:center;padding:5rem 2rem 2rem;
      background:radial-gradient(ellipse 70% 55% at 50% 25%,
        {t['accent_glow']} 0%, transparent 70%);">
 
-  <div style="display:inline-flex;align-items:center;gap:7px;
-       background:{t['card']};border:1px solid {t['border']};
-       border-radius:99px;padding:5px 18px 5px 10px;
-       font-size:0.72rem;font-weight:600;color:{t['text2']};
-       margin-bottom:1.75rem;letter-spacing:0.06em;text-transform:uppercase;">
-    <span style="width:7px;height:7px;border-radius:50%;
-          background:{t['accent']};display:inline-block;"></span>
-    Intelligent Extraction Engine
-  </div>
-
-  <h1 style="font-size:clamp(2.4rem,5.5vw,4rem);font-weight:800;
-      line-height:1.08;letter-spacing:-0.04em;
+  <h1 style="font-size:clamp(2.8rem,6vw,4.5rem);font-weight:800;
+      line-height:1.05;letter-spacing:-0.04em;
+      color:{t['text']};margin-bottom:0.5rem;">
+    Web Scrape Pro
+  </h1>
+  <h2 style="font-size:clamp(1.6rem,3.5vw,2.5rem);font-weight:700;
+      line-height:1.1;letter-spacing:-0.03em;
       color:{t['text']};margin-bottom:1.25rem;">
     Extract&nbsp;
     <span style="color:{t['accent']};">Structured Data</span>
-    <br>from Any Website
-  </h1>
+    from Any Website
+  </h2>
 
   <p style="font-size:1.05rem;color:{t['text2']};max-width:540px;
      margin:0 auto 2.5rem;line-height:1.7;">
-    Enterprise-grade web scraping powered by Playwright &amp; AI.
+    Enterprise-grade web scraping powered by Playwright and AI.
     Automated scheduling, AI-powered cleaning, and multi-format export.
   </p>
 </div>
 """, unsafe_allow_html=True)
 
-# CTA button centred
 _, cta_col, _ = st.columns([3, 2, 3])
 with cta_col:
     st.markdown('<div class="cta-btn">', unsafe_allow_html=True)
@@ -217,7 +179,6 @@ with cta_col:
         st.switch_page("pages/0_Sign_In.py")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Stats row
 st.markdown("<br>", unsafe_allow_html=True)
 s1, s2, s3, s4 = st.columns(4)
 for col, num, lbl in [
@@ -233,23 +194,21 @@ for col, num, lbl in [
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown(f'<hr style="border-color:{t["border"]};margin:0;">', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  FEATURES — built with native Streamlit columns
-# ══════════════════════════════════════════════════════════
+# FEATURES
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown('<div class="sec-label">What We Offer</div>', unsafe_allow_html=True)
 st.markdown('<div class="sec-title">Everything You Need to Extract Data</div>', unsafe_allow_html=True)
-st.markdown('<div class="sec-sub">From static pages to complex JavaScript apps — WebScraper Pro handles it all with AI-powered cleaning.</div>', unsafe_allow_html=True)
+st.markdown('<div class="sec-sub">From static pages to complex JavaScript apps — Web Scrape Pro handles it all with AI-powered cleaning.</div>', unsafe_allow_html=True)
 
 features = [
-    ("zap",       t['accent_glow'],                        t['accent'],  "Automated Extraction",
+    ("zap",       t['accent_glow'],          t['accent'],  "Automated Extraction",
      "Just enter a URL. Playwright handles JavaScript-rendered pages, SPAs, and lazy-loaded content automatically."),
-    ("bot",       "rgba(59,130,246,0.14)",                 t['blue'],    "AI-Powered Cleaning",
-     "ExtractoML uses LLMs to strip noise (ads, scripts, headers) and structure raw HTML into 99% accurate data."),
-    ("briefcase", "rgba(16,185,129,0.14)",                 t['green'],   "Business Insights",
+    ("bot",       "rgba(59,130,246,0.14)",   t['blue'],    "AI-Powered Cleaning",
+     "ExtractoML uses LLMs to strip noise and structure raw HTML into 99% accurate structured data."),
+    ("briefcase", "rgba(16,185,129,0.14)",   t['green'],   "Business Insights",
      "Track e-commerce prices, monitor job listings, collect news articles — structured and ready for analysis."),
-    ("monitor",   "rgba(139,92,246,0.14)",                 t['purple'],  "Professional UI",
-     "Streamlit-powered real-time dashboard with live console output. Export as CSV, JSON, or Excel instantly."),
+    ("monitor",   "rgba(139,92,246,0.14)",   t['purple'],  "Professional Dashboard",
+     "Real-time dashboard with live console output. Export as CSV, JSON, or Excel instantly."),
 ]
 
 fc1, fc2, fc3, fc4 = st.columns(4)
@@ -268,9 +227,7 @@ for col, (ico, bg, clr, title, desc) in zip([fc1, fc2, fc3, fc4], features):
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown(f'<hr style="border-color:{t["border"]};margin:0;">', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  HOW IT WORKS — native columns
-# ══════════════════════════════════════════════════════════
+# HOW IT WORKS
 st.markdown(f"""
 <div style="background:{t['bg2']};padding:3.5rem 2rem 2rem;">
   <div class="sec-label">Simple Process</div>
@@ -281,9 +238,9 @@ st.markdown(f"""
 
 hw1, hw2, hw3 = st.columns(3)
 for col, num, title, desc in [
-    (hw1, "1", "Enter URL",            "Paste any website URL into the dashboard. Choose your category and export format."),
-    (hw2, "2", "AI Extracts & Cleans", "Playwright renders the page. ExtractoML cleans with 99% accuracy using LLM processing."),
-    (hw3, "3", "Download Data",        "Clean structured data ready as CSV, JSON, or Excel — ready for analysis or integration."),
+    (hw1, "1", "Enter URL",            "Paste any website URL into the dashboard. Choose your export format."),
+    (hw2, "2", "AI Extracts & Cleans", "Playwright renders the page. AI cleans with 99% accuracy using LLM processing."),
+    (hw3, "3", "Download Data",        "Clean structured data ready as CSV, JSON, or Excel for analysis or integration."),
 ]:
     with col:
         st.markdown(f"""
@@ -296,11 +253,9 @@ for col, num, title, desc in [
 
 st.markdown(f'<hr style="border-color:{t["border"]};margin:0;">', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  TECH STACK
-# ══════════════════════════════════════════════════════════
+# TECH STACK
 tech_items = [
-    ("cpu","Python"), ("layers","Playwright"), ("bot","ExtractoML / LLM"),
+    ("cpu","Python"), ("layers","Playwright"), ("bot","AI / LLM"),
     ("bar-chart","Streamlit"), ("database","Pandas"), ("file-text","CSV / JSON / Excel"),
     ("shield","Proxy Support"), ("zap","Async Processing"),
 ]
@@ -318,39 +273,30 @@ st.markdown(f"""
 
 st.markdown(f'<hr style="border-color:{t["border"]};margin:0;">', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  CTA BANNER
-# ══════════════════════════════════════════════════════════
+# CTA BANNER - removed the Launch Dashboard button as per PDF feedback
 st.markdown(f"""
 <div style="text-align:center;padding:4rem 2rem;background:{t['bg2']};">
   <div style="font-size:2rem;font-weight:800;letter-spacing:-0.04em;
        color:{t['text']};margin-bottom:0.75rem;">Ready to Start Scraping?</div>
-  <div style="color:{t['text2']};margin-bottom:2rem;font-size:0.95rem;">
-    Join thousands of developers using WebScraper Pro to automate data collection.</div>
+  <div style="color:{t['text2']};margin-bottom:2.5rem;font-size:0.95rem;">
+    Join thousands of developers using Web Scrape Pro to automate data collection.</div>
 </div>
 """, unsafe_allow_html=True)
 _, cta2, _ = st.columns([3, 2, 3])
 with cta2:
     st.markdown('<div class="cta-btn">', unsafe_allow_html=True)
-    if st.button("Launch Dashboard", key="cta2_btn", use_container_width=True):
+    if st.button("Get Started Now", key="cta2_btn", use_container_width=True):
         st.switch_page("pages/0_Sign_In.py")
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown(f'<hr style="border-color:{t["border"]};margin:0;">', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════
-#  FOOTER
-# ══════════════════════════════════════════════════════════
+# FOOTER - removed left branding, centered copyright
 st.markdown(f"""
-<div style="padding:1.75rem 3rem;display:flex;align-items:center;
-     justify-content:space-between;flex-wrap:wrap;gap:1rem;">
-  <div style="display:flex;align-items:center;gap:8px;font-weight:700;
-       font-size:0.9rem;color:{t['text']};">
-    {icon('globe',15,t['accent'])} WebScraper Pro
-  </div>
+<div style="padding:1.75rem 3rem;text-align:center;">
   <div style="font-size:0.78rem;color:{t['muted']};">
-    &copy; 2026 WebScraper Pro &middot; Powered by Playwright &amp; AI
+    &copy; 2026 Web Scrape Pro &middot; Powered by Playwright &amp; AI
   </div>
 </div>
 """, unsafe_allow_html=True)
