@@ -325,7 +325,7 @@ with main:
             st.session_state["scrape_result_text"] = final_output
             st.session_state["dashboard_df"] = result_df
 
-            log("✅ Done!", 100)
+            log("Done!", 100)
             pb.empty()
             st_t.empty()
 
@@ -388,7 +388,7 @@ with main:
                 pass
 
     except Exception as e:
-        st.error(f"❌ Scrape failed: {e}")
+        st.error(f"Scrape failed: {e}")
 
     with rc:
         rc_df = st.session_state.get("dashboard_df")
