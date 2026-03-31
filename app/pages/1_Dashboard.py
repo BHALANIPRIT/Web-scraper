@@ -10,16 +10,20 @@ st.set_page_config(page_title="Dashboard — WebScraper Pro", page_icon="🌐",
 
 from utils.layout import setup_page
 from utils.icons import icon
+from utils.cache_manager import load_cache, save_cache
+from concurrent.futures import ThreadPoolExecutor
 from scraper.browser_manager import launch_browser, close_browser
 from scraper.page_loader import load_page
-from scraper.html_processor import process_html
-from scraper.tag_tree_builder import build_tag_tree
-from scraper.content_extractor import extract_content_by_tags
 from scraper.url_validator import validate_url
-from llm.tag_selector import select_relevant_tags
+from scraper.html_cleaner import clean_html
+from scraper.target_extractor import extract_by_target_tags
+from scraper.compact_tree_builder import build_compact_tree
+from llm.tag_identifier import identify_target_tags
 from llm.data_processor import process_extracted_data
 
-# Supabase (safe init)
+# ─────────────────────────────────────────────────────────────
+# 🔌  SUPABASE INIT
+# ─────────────────────────────────────────────────────────────
 try:
     from supabase import create_client
     from dotenv import load_dotenv
@@ -31,32 +35,113 @@ except Exception:
     SUPA_OK = False
 
 
-def _save_job(url, category, rows, status, duration):
+# ─────────────────────────────────────────────────────────────
+# 👤  AUTH HELPERS  (session-token → Supabase user)
+# ─────────────────────────────────────────────────────────────
+def _get_current_user_id() -> str | None:
+    """
+    Return the UUID of the currently logged-in Supabase user, or None.
+
+    Works with:
+      • st.session_state["supabase_session"]  – dict with key "access_token"
+      • st.session_state["supabase_user"]     – dict with key "id"
+      • st.session_state["user_id"]           – raw UUID string
+    Falls back to calling get_user() from the stored access token.
+    """
     if not SUPA_OK or _SUPA is None:
+        return None
+
+    # 1. Bare UUID already stored
+    uid = st.session_state.get("user_id")
+    if uid:
+        return str(uid)
+
+    # 2. User object stored
+    user_obj = st.session_state.get("supabase_user")
+    if isinstance(user_obj, dict):
+        return user_obj.get("id")
+    if hasattr(user_obj, "id"):
+        return str(user_obj.id)
+
+    # 3. Session object — exchange access token for user
+    session = st.session_state.get("supabase_session")
+    access_token = None
+    if isinstance(session, dict):
+        access_token = session.get("access_token")
+    elif hasattr(session, "access_token"):
+        access_token = session.access_token
+
+    if access_token:
+        try:
+            resp = _SUPA.auth.get_user(access_token)
+            if resp and resp.user:
+                uid = str(resp.user.id)
+                # Cache for the rest of this session
+                st.session_state["user_id"] = uid
+                return uid
+        except Exception:
+            pass
+
+    return None
+
+
+# ─────────────────────────────────────────────────────────────
+# 💾  DB HELPERS
+# ─────────────────────────────────────────────────────────────
+def _save_job(url: str, category: str, rows: int, status: str, duration: str) -> None:
+    if not SUPA_OK or _SUPA is None:
+        st.error("Supabase client not initialized.")
         return
     try:
-        _SUPA.table("scrape_jobs").insert({
-            "scraper_name": category,
-            "url": url,
-            "rows_extracted": rows,
-            "status": status,
-            "duration": duration,
-        }).execute()
-    except Exception:
-        pass
+        payload = {
+            "scraper_name":    category,
+            "url":             url,
+            "rows_extracted":  rows,
+            "status":          status,
+            "duration":        duration,
+        }
+        uid = _get_current_user_id()
+        if uid:
+            payload["user_id"] = uid
+
+        # Executing and capturing the response
+        response = _SUPA.table("scrape_jobs").insert(payload).execute()
+        
+        # If successful, this will print in your VS Code terminal
+        print(f"✅ Job saved successfully: {response.data}")
+        
+    except Exception as e:
+        # This will show the EXACT error (like 'Permission Denied' or 'Invalid UUID') in Streamlit
+        st.error(f"❌ Supabase Save Failed: {e}")
 
 
-def _load_jobs():
+def _load_jobs() -> list[dict]:
+    """
+    Load the 20 most-recent scrape_jobs.
+    • Logged-in  → only that user's rows  (uses user_id filter)
+    • Anonymous  → all rows with NULL user_id
+    """
     if not SUPA_OK or _SUPA is None:
         return []
     try:
-        res = _SUPA.table("scrape_jobs").select("*").order("created_at", desc=True).limit(20).execute()
+        uid = _get_current_user_id()
+        q = _SUPA.table("scrape_jobs").select("*").order("created_at", desc=True).limit(20)
+
+        if uid:
+            q = q.eq("user_id", uid)           # ← filter by logged-in user
+        else:
+            q = q.is_("user_id", "null")       # ← anonymous rows only
+
+        res = q.execute()
         return res.data or []
     except Exception:
         return []
 
 
-def to_excel(df):
+# ─────────────────────────────────────────────────────────────
+# 🛠️  DATA UTILITIES
+# ─────────────────────────────────────────────────────────────
+def to_excel(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False, sheet_name="Data")
@@ -74,41 +159,36 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def parse_final_output(final_output, extracted_data, query):
-    """Convert LLM final_output into a clean DataFrame with query-relevant columns."""
+    """Convert LLM final_output into a clean DataFrame."""
     df = None
     try:
-        if isinstance(final_output, list) and len(final_output) > 0 and isinstance(final_output[0], dict):
-            df = pd.DataFrame(final_output)
-        elif isinstance(final_output, dict):
-            for val in final_output.values():
-                if isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
-                    df = pd.DataFrame(val)
+        if isinstance(final_output, dict):
+            for key, value in final_output.items():
+                if isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict):
+                    df = pd.DataFrame(value)
                     break
+            if df is None:
+                df = pd.DataFrame([final_output])
+
+        elif isinstance(final_output, list) and len(final_output) > 0:
+            df = pd.DataFrame(final_output)
+
         elif isinstance(final_output, str):
             import re
-            m = re.search(r'\[[\s\S]*?\]', final_output)
+            m = re.search(r'\[[\s\S]*\]|\{[\s\S]*\}', final_output)
             if m:
                 try:
                     parsed = json.loads(m.group())
-                    if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
-                        df = pd.DataFrame(parsed)
-                except Exception:
-                    pass
-    except Exception:
-        df = None
+                    return parse_final_output(parsed, extracted_data, query)
+                except json.JSONDecodeError:
+                    st.error("AI returned incomplete data. Please try increasing token limits.")
+                    return None
 
-    if df is None and isinstance(extracted_data, list) and len(extracted_data) > 0:
-        raw = pd.DataFrame(extracted_data)
-        raw = clean_dataframe(raw)
-        if 'text' in raw.columns:
-            clean = raw[raw['text'].astype(str).str.strip() != ''].copy()
-            df = clean[['text']].rename(columns={'text': 'Extracted Text'}).reset_index(drop=True)
-        else:
-            df = raw
+    except Exception as e:
+        st.error(f"Data parsing error: {e}")
+        return None
 
-    if df is not None:
-        df = clean_dataframe(df)
-    return df
+    return clean_dataframe(df) if df is not None else None
 
 
 def gen_ai_analysis(df: pd.DataFrame) -> str:
@@ -143,29 +223,37 @@ def gen_ai_analysis(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-for _k, _v in [("dashboard_df", None), ("scrape_result_text", None), ("last_query", ""),
-                ("_from_scrape", False)]:
+# ─────────────────────────────────────────────────────────────
+# 🗂️  SESSION STATE DEFAULTS
+# ─────────────────────────────────────────────────────────────
+for _k, _v in [("dashboard_df", None), ("scrape_result_text", None),
+                ("last_query", ""), ("_from_scrape", False)]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
+# ─────────────────────────────────────────────────────────────
+# 🖼️  PAGE LAYOUT
+# ─────────────────────────────────────────────────────────────
 t, main = setup_page("Dashboard")
 
-st.markdown(f"""
+st.markdown("""
 <style>
-.dash-wrap {{ padding: 1rem 1.4rem; }}
-[data-testid="stHorizontalBlock"] [data-testid="stColumn"] {{
-    padding: 0 0.3rem !important;
-}}
-[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child {{
-    padding-left: 0 !important;
-}}
-[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child {{
-    padding-right: 0 !important;
-}}
+.dash-wrap { padding: 1rem 1.4rem; }
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"] { padding: 0 0.3rem !important; }
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child { padding-left: 0 !important; }
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child  { padding-right: 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
 with main:
+
+    # ── Header ──────────────────────────────────────────────
+    uid_display = _get_current_user_id()
+    user_badge  = (
+        f'<span style="font-size:0.7rem;color:{t["muted"]};margin-left:8px;">'
+        f'👤 {uid_display[:8]}…</span>'
+        if uid_display else ""
+    )
 
     st.markdown(f"""
 <div class="dash-wrap" style="padding-bottom:0.5rem;">
@@ -173,7 +261,7 @@ with main:
     <div>
       <div style="font-size:0.63rem;color:{t['muted']};font-weight:700;text-transform:uppercase;
            letter-spacing:0.1em;margin-bottom:3px;">AI-Powered Data</div>
-      <div class="PT">Web Scraping Dashboard</div>
+      <div class="PT">Web Scraping Dashboard {user_badge}</div>
       <div class="PS" style="margin-bottom:0;">Extract, upload, and analyze website data in real-time.</div>
     </div>
     <span class="BG G">
@@ -185,12 +273,13 @@ with main:
 </div>
 """, unsafe_allow_html=True)
 
+    # ── Top Metrics ─────────────────────────────────────────
     st.markdown(f'<div class="dash-wrap" style="padding-top:0.6rem;padding-bottom:0.6rem;">', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3, gap="small")
     with c1:
         st.metric("Data Accuracy", "99.2%", "ExtractoML")
     with c2:
-        _df_check = st.session_state.get("dashboard_df")
+        _df_check  = st.session_state.get("dashboard_df")
         _row_count = len(_df_check) if _df_check is not None else 0
         st.metric("Total Rows Extracted", str(_row_count),
                   "rows loaded" if _row_count > 0 else "No jobs yet")
@@ -210,6 +299,7 @@ with main:
 """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── New Project + Data Schema ────────────────────────────
     st.markdown(f'<div class="dash-wrap" style="padding-top:0;">', unsafe_allow_html=True)
     lc, rc = st.columns([3, 1], gap="small")
 
@@ -229,7 +319,8 @@ with main:
             url = st.text_input("URL", placeholder="Enter Website URL to Scrape",
                                 label_visibility="collapsed", key="dash_url")
         with cc:
-            cat = st.selectbox("Category", ["E-commerce", "News Articles", "Job Listings", "Custom"],
+            cat = st.selectbox("Category",
+                               ["E-commerce", "News Articles", "Job Listings", "Custom"],
                                label_visibility="collapsed", key="dash_cat")
 
         with st.form(key="scrape_form", clear_on_submit=False):
@@ -255,7 +346,7 @@ with main:
                 st_t = st.empty()
                 con  = st.empty()
                 lines = []
-                _t0 = time.time()
+                _t0  = time.time()
 
                 def log(msg, pct):
                     pb.progress(pct)
@@ -270,53 +361,81 @@ with main:
                         unsafe_allow_html=True)
 
                 try:
-                    log("Validating URL...", 10)
+                    log("Validating URL...", 5)
                     if not validate_url(url):
-                        st.error("Invalid or unreachable URL.")
+                        st.error("Invalid URL.")
                         st.stop()
 
-                    log("Launching browser...", 20)
-                    playwright, browser = launch_browser()
+                    # ── Cache check ──────────────────────────
+                    cached = load_cache(url, query)
 
-                    try:
-                        log("Loading page...", 35)
-                        raw_html = load_page(browser, url)
+                    if cached is not None:
+                        log("Cache hit — loading saved results...", 80)
+                        pb.progress(100)
+                        st_t.empty(); con.empty(); pb.empty()
+                        st.info("⚡ Loaded from cache — no re-scrape needed.")
 
-                        log("Cleaning HTML...", 50)
-                        soup = process_html(raw_html)
+                        final_output   = cached.get("final_output")
+                        extracted_data = cached.get("extracted_data", [])
 
-                        log("Building tag tree...", 60)
-                        tag_tree = build_tag_tree(soup)
-
-                        log("AI selecting relevant tags...", 72)
-                        selected_tags = select_relevant_tags(query, tag_tree)
-
-                        log("Extracting content...", 85)
-                        extracted_data = extract_content_by_tags(soup, selected_tags)
-
-                        log("AI processing final output...", 95)
-                        final_output = process_extracted_data(query, extracted_data)
-
-                        dur = f"{time.time()-_t0:.1f}s"
-                        log(f"Done! ({dur})", 100)
-                        pb.empty(); st_t.empty(); con.empty()
-
-                        st.session_state["last_query"] = query
                         st.session_state["scrape_result_text"] = str(final_output)
                         st.session_state["_from_scrape"] = True
 
                         result_df = parse_final_output(final_output, extracted_data, query)
                         if result_df is not None:
                             st.session_state["dashboard_df"] = result_df
-                            _save_job(url, cat, len(result_df), "Completed", dur)
+                            _save_job(url, cat, len(result_df), "Completed (cached)",
+                                      f"{time.time() - _t0:.1f}s")
 
-                    finally:
-                        close_browser(playwright, browser)
+                    else:
+                        # ── Full scrape ──────────────────────
+                        log("Launching browser...", 20)
+                        playwright, browser = launch_browser()
+
+                        try:
+                            with ThreadPoolExecutor() as executor:
+                                log("AI identifying tags in background...", 40)
+                                future_tags = executor.submit(identify_target_tags, query)
+
+                                log("Loading page on main thread...", 55)
+                                raw_html = load_page(browser, url)
+
+                                tag_list = future_tags.result()
+
+                            log("Cleaning HTML & Extracting target tags...", 75)
+                            soup           = clean_html(raw_html)
+                            extracted_data = extract_by_target_tags(soup, tag_list)
+
+                            log("Processing with AI...", 90)
+                            compact_tree = build_compact_tree(extracted_data)
+                            final_output = process_extracted_data(query, compact_tree)
+
+                            log("Done!", 100)
+                            pb.empty(); st_t.empty(); con.empty()
+
+                            save_cache(url, {
+                                "final_output":   final_output,
+                                "extracted_data": extracted_data,
+                            }, query)
+
+                            st.session_state["scrape_result_text"] = str(final_output)
+                            st.session_state["_from_scrape"] = True
+
+                            result_df = parse_final_output(final_output, extracted_data, query)
+                            if result_df is not None:
+                                st.session_state["dashboard_df"] = result_df
+                                _save_job(url, cat, len(result_df), "Completed",
+                                          f"{time.time() - _t0:.1f}s")
+
+                        finally:
+                            close_browser(playwright, browser)
 
                 except Exception as e:
                     st.error(f"Scrape failed: {e}")
+                    # Log failure to Supabase
+                    _save_job(url, cat, 0, "Failed", f"{time.time() - _t0:.1f}s")
 
-        # Show results — only AI summary (larger) + download buttons, NO duplicate table
+        # ── Results panel ────────────────────────────────────
         if st.session_state.get("dashboard_df") is not None and st.session_state.get("_from_scrape"):
             result_df = st.session_state["dashboard_df"]
             raw_text  = st.session_state.get("scrape_result_text", "")
@@ -324,7 +443,6 @@ with main:
             st.success(f"Scraping complete! {len(result_df)} rows extracted. "
                        f"Columns: {', '.join(result_df.columns.tolist())}")
 
-            # AI Summary — larger height so more output is visible
             if raw_text:
                 st.markdown(f"""
 <div style="background:{t['bg2']};border:1px solid {t['border']};border-radius:12px;
@@ -345,7 +463,6 @@ with main:
 </div>
 """, unsafe_allow_html=True)
 
-            # Download buttons — table is shown in Data Analysis Canvas below
             dl1, dl2, dl3 = st.columns(3, gap="small")
             with dl1:
                 st.download_button("Download CSV", result_df.to_csv(index=False),
@@ -363,11 +480,12 @@ with main:
 
             if st.button("Clear Results", key="clear_results"):
                 st.session_state["scrape_result_text"] = None
-                st.session_state["dashboard_df"] = None
-                st.session_state["last_query"] = ""
-                st.session_state["_from_scrape"] = False
+                st.session_state["dashboard_df"]       = None
+                st.session_state["last_query"]         = ""
+                st.session_state["_from_scrape"]       = False
                 st.rerun()
 
+    # ── Right Column: Schema + Export ────────────────────────
     with rc:
         rc_df = st.session_state.get("dashboard_df")
 
@@ -438,7 +556,7 @@ with main:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Upload Section — NO duplicate preview table (data goes straight to canvas below)
+    # ── Upload Section ───────────────────────────────────────
     st.markdown(f'<div class="dash-wrap" style="padding-top:0.3rem;">', unsafe_allow_html=True)
     st.markdown(f"""
 <div style="background:{t['card']};border:1px solid {t['border']};border-radius:14px;
@@ -493,8 +611,6 @@ with main:
 
         if df is not None:
             df = clean_dataframe(df)
-            # Store in session — the Data Analysis Canvas below will show it
-            # NO duplicate preview table here
             st.session_state["dashboard_df"] = df
             st.session_state["_from_scrape"] = False
             st.info(f"Loaded {df.shape[0]} rows x {df.shape[1]} columns from {fname}. "
@@ -502,7 +618,7 @@ with main:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Data Analysis Canvas — shown when any data is loaded (from scrape or upload)
+    # ── Data Analysis Canvas ─────────────────────────────────
     canvas_df = st.session_state.get("dashboard_df")
     if canvas_df is not None:
         canvas_df = clean_dataframe(canvas_df)
@@ -553,8 +669,8 @@ with main:
                 with ch2:
                     y_col = st.selectbox("Y Axis (numeric)", num_cols, key="chart_y")
                 with ch3:
-                    chart_type = st.selectbox("Chart Type", ["Bar", "Line", "Area"], key="chart_type_sel")
-
+                    chart_type = st.selectbox("Chart Type", ["Bar", "Line", "Area"],
+                                              key="chart_type_sel")
                 try:
                     cdf = canvas_df[[x_col, y_col]].copy()
                     cdf[y_col] = pd.to_numeric(
@@ -598,7 +714,7 @@ with main:
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Recent Jobs — live from Supabase
+    # ── Recent Jobs — live from Supabase (user-scoped) ───────
     st.markdown(f'<div class="dash-wrap" style="padding-top:0.2rem;">', unsafe_allow_html=True)
     db_jobs = _load_jobs()
 
@@ -611,9 +727,10 @@ with main:
     if db_jobs:
         td_s = f"padding:0.6rem 0.75rem;border-bottom:1px solid {t['border']};font-size:0.79rem;"
         bm = {
-            "Completed": ("rgba(16,185,129,0.14)", t['green']),
-            "Failed":    ("rgba(239,68,68,0.14)",  t['red']),
-            "Running":   (t['accent_glow'],         t['accent']),
+            "Completed":          ("rgba(16,185,129,0.14)", t['green']),
+            "Completed (cached)": ("rgba(16,185,129,0.08)", t['green']),
+            "Failed":             ("rgba(239,68,68,0.14)",  t['red']),
+            "Running":            (t['accent_glow'],         t['accent']),
         }
         rows_html = ""
         for row in db_jobs:
@@ -650,6 +767,9 @@ with main:
   <div style="font-size:0.88rem;font-weight:700;color:{t['text']};
        margin-bottom:0.65rem;display:flex;align-items:center;gap:7px;">
     {icon('list-checks',13,t['accent'])} Recent Scraping Jobs
+    <span style="font-size:0.69rem;font-weight:500;color:{t['muted']};margin-left:auto;">
+      {'Showing your jobs' if _get_current_user_id() else 'Showing anonymous jobs'}
+    </span>
   </div>
   <table style="width:100%;border-collapse:collapse;">
     <thead><tr>{th_html}</tr></thead>

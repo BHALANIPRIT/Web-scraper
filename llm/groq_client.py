@@ -25,7 +25,7 @@ else:
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
-def call_llm_api(prompt, model=DEFAULT_MODEL, temperature=0.2, max_tokens=1024):
+def call_llm_api(prompt, model=DEFAULT_MODEL, temperature=0.2, max_tokens=2000):
     """
     Generic LLM caller for all modules via Groq.
 
