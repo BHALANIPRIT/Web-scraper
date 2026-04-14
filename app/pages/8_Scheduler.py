@@ -1,13 +1,24 @@
-import streamlit as st, sys, os
+import streamlit as st, sys, os, uuid
 from datetime import datetime, date, time as dtime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+  sys.path.insert(0, PROJECT_ROOT)
 st.set_page_config(page_title="Scheduler — WebScraper Pro", page_icon="🌐",
                    layout="wide", initial_sidebar_state="collapsed")
 from utils.layout import setup_page
 from utils.icons import icon
+from scheduler.models import ScrapeJob
+from scheduler.scheduler_manager import SchedulerManager
+from scheduler.job_registry import JobRegistry
 
-if "schedules" not in st.session_state:
-    st.session_state.schedules = []
+if "scheduler" not in st.session_state:
+  st.session_state.scheduler = SchedulerManager()
+if "registry" not in st.session_state:
+  st.session_state.registry = JobRegistry()
+
+scheduler_manager = st.session_state.scheduler
+job_registry = st.session_state.registry
 
 SCRAPERS       = ["Custom Scraper", "E-commerce Scraper", "News Scraper", "Job Listings Scraper"]
 FREQ_OPTIONS   = ["Hourly", "Every 6h", "Daily", "Weekly", "Monthly"]
@@ -35,6 +46,35 @@ SCRAPER_COLORS = {
     "News Scraper":         t["blue"],
     "Job Listings Scraper": t["purple"],
 }
+
+
+def _get_next_run_label(job):
+  if not getattr(job, "is_active", False):
+    return "—"
+  try:
+    aps_job = scheduler_manager.scheduler.get_job(job.job_id)
+    if aps_job and aps_job.next_run_time:
+      return aps_job.next_run_time.strftime("%Y-%m-%d %H:%M")
+  except Exception:
+    pass
+  return "Scheduled"
+
+
+def _to_row(job):
+  return {
+    "id": job.job_id,
+    "scraper": job.scraper_type,
+    "url": job.target_url,
+    "query": job.query,
+    "frequency": job.frequency,
+    "start_time": job.start_time,
+    "start_date": job.start_date,
+    "format": job.export_format,
+    "max_rows": int(job.max_rows),
+    "email_notify": bool(job.email_notification),
+    "status": "Active" if bool(job.is_active) else "Paused",
+    "next_run": _get_next_run_label(job),
+  }
 
 with main:
     PAD = "padding:0 1.4rem"
@@ -88,6 +128,17 @@ with main:
     with r2c3:
         start_date_val = st.date_input("Start Date", value=date.today(), key="sch_date")
 
+    # Match demo scheduler behavior: allow explicit minute override for hourly jobs.
+    start_minute = int(start_time_val.minute)
+    if frequency == "Hourly":
+      start_minute = st.number_input(
+        "Minute of hour (0-59)",
+        min_value=0,
+        max_value=59,
+        value=int(start_time_val.minute),
+        key="sch_minute",
+      )
+
     r3c1, r3c2, r3c3 = st.columns(3, gap="medium")
     with r3c1:
         exp_format = st.selectbox("Export Format", FORMAT_OPTIONS, key="sch_format")
@@ -112,26 +163,33 @@ with main:
         elif not query_input:
             st.error("Please enter a query describing what to extract.")
         else:
-            new_id = f"sch_{int(datetime.now().timestamp()*1000)}"
-            hr = start_time_val.strftime("%H:%M")
-            dt = start_date_val.strftime("%Y-%m-%d")
-            initial_status = "Active" if start_active else "Paused"
-            st.session_state.schedules.insert(0, {
-                "id": new_id, "scraper": scraper_name, "url": url_input,
-                "query": query_input,
-                "frequency": frequency, "start_time": hr, "start_date": dt,
-                "format": exp_format, "max_rows": int(max_rows),
-                "email_notify": email_notify, "status": initial_status,
-                "next_run": f"{dt} {hr}" if initial_status == "Active" else "—",
-                "run_count": 0,
-            })
-            st.success(f"Scheduled — {scraper_name} runs {frequency} starting {dt} at {hr} (Status: {initial_status})")
+            job = ScrapeJob(
+                job_id=str(uuid.uuid4()),
+                scraper_type=scraper_name,
+                target_url=url_input,
+                query=query_input,
+                frequency=frequency,
+                start_time=start_time_val.strftime("%H:%M"),
+                start_date=start_date_val.strftime("%Y-%m-%d"),
+                export_format=exp_format,
+                max_rows=int(max_rows),
+                email_notification=bool(email_notify),
+                is_active=bool(start_active),
+                start_minute=int(start_minute),
+            )
+            job_registry.add_job(job)
+            if job.is_active:
+                scheduler_manager.add_job(job)
+            st.success(
+                f"Scheduled — {scraper_name} runs {frequency} starting {job.start_date} at {job.start_time} "
+                f"(Status: {'Active' if job.is_active else 'Paused'})"
+            )
             st.rerun()
 
     st.markdown(f'<div style="height:0.75rem"></div>', unsafe_allow_html=True)
 
     # Summary stats
-    scheds   = st.session_state.schedules
+    scheds = [_to_row(job) for job in job_registry.get_all_jobs()]
     total    = len(scheds)
     active   = sum(1 for s in scheds if s["status"] == "Active")
     paused   = sum(1 for s in scheds if s["status"] == "Paused")
@@ -217,24 +275,35 @@ with main:
 """, unsafe_allow_html=True)
 
         # Action buttons per schedule
-        for idx, s in enumerate(scheds):
+        for s in scheds:
             ac1, ac2, _ = st.columns([1, 1, 5])
             with ac1:
                 if s["status"] == "Active":
                     if st.button("Pause", key=f"pause_{s['id']}", use_container_width=True):
-                        st.session_state.schedules[idx]["status"] = "Paused"
-                        st.session_state.schedules[idx]["next_run"] = "—"
+                        job = job_registry.jobs.get(s["id"])
+                        if job:
+                            try:
+                                scheduler_manager.remove_job(job.job_id)
+                            except Exception:
+                                pass
+                            job.is_active = False
                         st.rerun()
                 else:
                     if st.button("Resume", key=f"resume_{s['id']}", use_container_width=True):
-                        st.session_state.schedules[idx]["status"] = "Active"
-                        hr = s.get("start_time", "09:00")
-                        dt = date.today().strftime("%Y-%m-%d")
-                        st.session_state.schedules[idx]["next_run"] = f"{dt} {hr}"
+                        job = job_registry.jobs.get(s["id"])
+                        if job and not job.is_active:
+                            job.is_active = True
+                            scheduler_manager.add_job(job)
                         st.rerun()
             with ac2:
                 if st.button("Delete", key=f"del_{s['id']}", use_container_width=True):
-                    st.session_state.schedules.pop(idx)
+                    job = job_registry.jobs.get(s["id"])
+                    if job and job.is_active:
+                        try:
+                            scheduler_manager.remove_job(job.job_id)
+                        except Exception:
+                            pass
+                    job_registry.remove_job(s["id"])
                     st.rerun()
 
     else:
@@ -269,9 +338,14 @@ with main:
         for s in active_scheds:
             interval = FREQ_INTERVALS.get(s["frequency"], timedelta(days=1))
             try:
-                next_dt = datetime.strptime(s["next_run"], "%Y-%m-%d %H:%M")
+              job = job_registry.jobs.get(s["id"])
+              aps_job = scheduler_manager.scheduler.get_job(job.job_id) if job else None
+              if aps_job and aps_job.next_run_time:
+                next_dt = aps_job.next_run_time
+              else:
+                next_dt = datetime.strptime(f"{s['start_date']} {s['start_time']}", "%Y-%m-%d %H:%M")
             except Exception:
-                next_dt = now + interval
+              next_dt = now + interval
             for i in range(3):  # next 3 runs per schedule
                 run_dt = next_dt + interval * i
                 upcoming.append({
